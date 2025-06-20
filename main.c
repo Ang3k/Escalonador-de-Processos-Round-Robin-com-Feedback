@@ -2,13 +2,13 @@
 #include <stdlib.h>
 #include <time.h>
 
-// Definindo variáveis especiais
+// Definindo o quantum e o máximo de processos no escalonador
 #define max_processos 10
 #define quantum 3
 int contador_global = 0;
 int tempo_chegada_acumulado = 0;
 
-// --- ESTRUTURAS (sem alterações) ---
+// Estruturas
 typedef struct {
     int PID;
     int PPID;
@@ -20,6 +20,11 @@ typedef struct {
     int tempo_servico;
     int tempo_chegada;
     int tempo_CPU_usado;
+    
+    int num_total_IO;            
+    int proximo_IO;               
+    int tipo_IO[3]; // Os IO´S são representados por valores inteiros, "1" representa Disco por exemplo
+    int gatilhos_IO[3];  
 } processo;
 
 typedef struct {
@@ -29,7 +34,7 @@ typedef struct {
     processo fila_processos[max_processos];
 } fila;
 
-// --- PROTÓTIPOS DAS FUNÇÕES (sem alterações) ---
+// Protótipos das funções
 processo criadora_processos();
 void inicializar_fila(fila* f);
 void enfileirar(fila* f, processo p);
@@ -40,19 +45,36 @@ int rodar_processo(processo* p, int tempo_atual, int* terminou);
 int CPU_executa(fila* alta, fila* baixa, int* finalizados, int tempo_atual);
 
 
-// --- IMPLEMENTAÇÃO DAS FUNÇÕES ---
+// Implementações das funções
 
 processo criadora_processos(){
     processo novo_processo;
+
+    // Informações da PCB
     novo_processo.pcb_info.PID = contador_global++;
     novo_processo.pcb_info.PPID = 1;
     novo_processo.pcb_info.status = 0;
-    novo_processo.tempo_servico = (rand() % 10) + 1; 
+
+    // Contextos gerais
     novo_processo.tempo_CPU_usado = 0;
     tempo_chegada_acumulado += (rand() % 4 + 1); 
     novo_processo.tempo_chegada = tempo_chegada_acumulado; 
+
+    // Informações de IO
+    int temp = 0;
+    novo_processo.num_total_IO = (rand() % 4);
+    novo_processo.proximo_IO = 0;
+    for (int i = 0 ; i < novo_processo.num_total_IO ; i++){
+        novo_processo.gatilhos_IO[i] = temp + (rand() % 6) + 2;
+        novo_processo.tipo_IO[i] = (rand() % 3) + 1;
+        temp = novo_processo.gatilhos_IO[i];
+    }
+    novo_processo.tempo_servico = temp + (rand() % 10) + 1; // utilizando temp para ter tempo o suficiente para rodar o programa e fazer os IO´s 
     return novo_processo;
 }
+
+
+// Lógicas para as filas
 
 void inicializar_fila(fila* f){
     f->inicio = 0;
@@ -90,29 +112,56 @@ void printa_fila(fila* f){
     }
 }
 
+// Vetor para printar informações na função à seguir
+static const char* dispositivos_IO[] = {
+    "Nenhum",           // 0
+    "Disco",            // 1
+    "Fita Magnetica",   // 2
+    "Impressora"        // 3
+};
+
+// Função apenas para printara as informações principais do processo
 void printa_lista_de_processos(processo lista[], int num_processos) {
-    printf("--- Lista de Processos a serem Simulados ---\n");
+    printf("\n--------------------------------------------------------------------------\n");
+    printf("PID | Chegada | Servico | I/Os | Dispositivos\n");
+    printf("----|---------|---------|------|------------------------------------------\n");
+    
     for (int i = 0; i < num_processos; i++) {
-        printf("PID: %d | Chegada: %d | Tempo de Servico: %d\n",
-               lista[i].pcb_info.PID, lista[i].tempo_chegada, lista[i].tempo_servico);
+        printf("%3d |   %3d   |   %3d   |  %2d  | ", 
+               lista[i].pcb_info.PID,
+               lista[i].tempo_chegada, 
+               lista[i].tempo_servico,
+               lista[i].num_total_IO);
+        
+        // Imprime todas as operações I/O em uma linha
+        if (lista[i].num_total_IO > 0) {
+            for (int j = 0; j < lista[i].num_total_IO; j++) {
+                printf("%s(%d)", dispositivos_IO[lista[i].tipo_IO[j]], lista[i].gatilhos_IO[j]);
+                if (j < lista[i].num_total_IO - 1) printf(", ");
+            }
+        } else {
+            printf("Nenhuma");
+        }
+        printf("\n");
     }
-    printf("---------------------------------------------\n\n");
+    printf("--------------------------------------------------------------------------\n\n");
 }
 
+// Função Principal para Rodar os Processos
 int rodar_processo(processo* p, int tempo_atual, int* terminou) {
     printf("Tempo %d: CPU <- PID %d (Servico restante: %d)\n", tempo_atual, p->pcb_info.PID, p->tempo_servico);
     p->pcb_info.status = 1;
     int tempo_executado = 0;
-    while (tempo_executado < quantum && p->tempo_servico > 0) {
+    while (tempo_executado < quantum && p->tempo_servico > 0) { // Código só termina quando o quantum acaba ou o tempo de serviço na CPU se esgota
         p->tempo_servico--;
         p->tempo_CPU_usado++;
         tempo_executado++;
     }
-    if (p->tempo_servico <= 0) {
+    if (p->tempo_servico <= 0) { // Informa se terminamos o tempo de serviço, atualizando o status na PCB
         p->pcb_info.status = 3;
         printf("Tempo %d: PID %d TERMINOU.\n", tempo_atual + tempo_executado, p->pcb_info.PID);
         *terminou = 1;
-    } else {
+    } else { // Preempção do processo pelo fim do quantum
         p->pcb_info.status = 0;
         printf("Tempo %d: PID %d sofreu PREEMPCAO. Falta %d de servico.\n", tempo_atual + tempo_executado, p->pcb_info.PID, p->tempo_servico);
         *terminou = 0;
@@ -126,19 +175,19 @@ int CPU_executa(fila* alta, fila* baixa, int* finalizados, int tempo_atual) {
     int processo_terminou = 0;
     int tempo_gasto = 0;
 
-    if (alta->tamanho > 0) {
+    if (alta->tamanho > 0) { // Busca primeiro na fila de alta prioridade, removendo o processo de lá e rodando ele
         p_executando = desenfileirar(alta);
         tempo_gasto = rodar_processo(&p_executando, tempo_atual, &processo_terminou);
 
         if (processo_terminou == 1) (*finalizados)++;
-        else enfileirar(baixa, p_executando);
+        else enfileirar(baixa, p_executando); // Se ele não terminar, vai pra fila de baixa prioridade
         
-    } else if (baixa->tamanho > 0) {
+    } else if (baixa->tamanho > 0) { // Busca se não achar na fila de alta prioridade
         p_executando = desenfileirar(baixa);
         tempo_gasto = rodar_processo(&p_executando, tempo_atual, &processo_terminou);
 
         if (processo_terminou == 1) (*finalizados)++;
-        else enfileirar(baixa, p_executando);
+        else enfileirar(baixa, p_executando); // Se ele não terminar, se mantém na fila de baixa prioridade
         
     } else {
         printf("Tempo %d: CPU Ociosa...\n", tempo_atual);
@@ -148,7 +197,7 @@ int CPU_executa(fila* alta, fila* baixa, int* finalizados, int tempo_atual) {
 }
 
 
-// --- Lógica Principal ---
+// Lógica Principal
 int main() {
     fila prioridade_alta, prioridade_baixa;
     inicializar_fila(&prioridade_alta);
@@ -156,19 +205,20 @@ int main() {
     
     srand(time(NULL));
 
+    // Simplesmente criando todos os processos que vão ser simulados
     processo todos_os_processos[max_processos]; 
-    for (int i = 0; i < max_processos; i++) {
-        todos_os_processos[i] = criadora_processos();
-    }
+    for (int i = 0; i < max_processos; i++) todos_os_processos[i] = criadora_processos();
     printa_lista_de_processos(todos_os_processos, max_processos);
 
+
+    // Variáveis para o controle do tempo na simulação
     int tempo_simulacao = 0;
     int processos_finalizados = 0;
     int tempo_anterior = -1; 
 
     printf("\n--- INICIO DA SIMULACAO (Quantum = %d) ---\n", quantum);
     while (processos_finalizados < max_processos) {
-        // CORREÇÃO: Verifica chegadas no INTERVALO de tempo
+        // Verifica chegadas no INTERVALO de tempo
         for (int i = 0; i < max_processos; i++) {
             if (todos_os_processos[i].tempo_chegada > tempo_anterior && todos_os_processos[i].tempo_chegada <= tempo_simulacao) {
                 printf("Tempo %d: Chegou o PID %d.\n", todos_os_processos[i].tempo_chegada, todos_os_processos[i].pcb_info.PID);
