@@ -1,7 +1,3 @@
-Claro, aqui está uma sugestão de arquivo `README.md` resumido.
-
------
-
 # Simulador de Escalonador de Processos
 
 [cite\_start]Este projeto é uma implementação em C de um simulador de escalonador de processos, desenvolvido para a disciplina de Arquitetura de Computadores e Sistemas Operacionais[cite: 1]. [cite\_start]O objetivo é simular a alocação de CPU e o gerenciamento de filas de processos e de I/O[cite: 2].
