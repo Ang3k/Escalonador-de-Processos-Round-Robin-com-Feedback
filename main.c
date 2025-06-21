@@ -1,11 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <string.h>
 #include "fila.h"
 
 // Definindo variáveis e constantes importantes
 #define max_processos 10
-#define quantum 3
+#define quantum 5
 #define TEMPO_DISCO 7
 #define TEMPO_FITA 10
 #define TEMPO_IMPRESSORA 15
@@ -15,6 +16,7 @@ int tempo_chegada_acumulado = 0;
 
 // Protótipos das funções
 processo criadora_processos();
+int carregar_processos_csv(const char* arquivo, processo lista[], int max_procs);
 void printa_lista_de_processos(processo lista[], int num_processos);
 int rodar_processo(processo* p, int tempo_atual, int* status_final, int* tipo_io_ocorrido);
 int CPU_executa(fila* alta, fila* baixa, fila* io_disco, fila* io_fita, fila* io_impressora, int* finalizados, int tempo_atual);
@@ -48,6 +50,78 @@ processo criadora_processos(){
     }
     novo_processo.tempo_servico = temp + (rand() % 10) + 1; // utilizando temp para ter tempo o suficiente para rodar o programa e fazer os IO´s
     return novo_processo;
+}
+
+int carregar_processos_csv(const char* arquivo, processo lista[], int max_procs) {
+    FILE* file = fopen(arquivo, "r");
+    if (!file) {
+        printf("Erro ao abrir arquivo CSV: %s\n", arquivo);
+        return -1;
+    }
+    
+    char linha[512];
+    int num_processos = 0;
+    
+    // Pula o cabeçalho
+    if (fgets(linha, sizeof(linha), file) == NULL) {
+        fclose(file);
+        return -1;
+    }
+    
+    while (fgets(linha, sizeof(linha), file) && num_processos < max_procs) {
+        processo p;
+        memset(&p, 0, sizeof(processo));
+        
+        // Parse básico da linha CSV
+        char* token = strtok(linha, ",");
+        if (!token) continue;
+        
+        // PID
+        p.pcb_info.PID = atoi(token);
+        contador_global = p.pcb_info.PID + 1;
+        
+        // PPID
+        token = strtok(NULL, ",");
+        if (!token) continue;
+        p.pcb_info.PPID = atoi(token);
+        
+        // Tempo de chegada
+        token = strtok(NULL, ",");
+        if (!token) continue;
+        p.tempo_chegada = atoi(token);
+        
+        // Tempo de serviço
+        token = strtok(NULL, ",");
+        if (!token) continue;
+        p.tempo_servico = atoi(token);
+        
+        // Número de I/Os
+        token = strtok(NULL, ",");
+        if (!token) continue;
+        p.num_total_IO = atoi(token);
+        
+        // Gatilhos e tipos de I/O
+        for (int i = 0; i < p.num_total_IO && i < 10; i++) {
+            token = strtok(NULL, ",");
+            if (!token) break;
+            p.gatilhos_IO[i] = atoi(token);
+            
+            token = strtok(NULL, ",");
+            if (!token) break;
+            p.tipo_IO[i] = atoi(token);
+        }
+        
+        // Inicializa outros campos
+        p.pcb_info.status = 0;
+        p.tempo_CPU_usado = 0;
+        p.tempo_restante_IO = 0;
+        p.proximo_IO = 0;
+        
+        lista[num_processos++] = p;
+    }
+    
+    fclose(file);
+    return num_processos;
 }
 
 
@@ -100,7 +174,7 @@ int rodar_processo(processo* p, int tempo_atual, int* status_final, int* tipo_io
             int gatilho_atual = p->gatilhos_IO[p->proximo_IO];
             if (p->tempo_CPU_usado == gatilho_atual){
                 printf("Tempo %d: PID %d solicitou I/O de %s.\n", tempo_atual + tempo_executado, p->pcb_info.PID, dispositivos_IO[p->tipo_IO[p->proximo_IO]]); 
-                p->pcb_info.status = 2; // indica fazendo IO
+                p->pcb_info.status = 2; // Indicação que está fazendo IO
                 *status_final = 2;
                 *tipo_io_ocorrido = p->tipo_IO[p->proximo_IO];
                 p->proximo_IO++;
@@ -120,7 +194,7 @@ int rodar_processo(processo* p, int tempo_atual, int* status_final, int* tipo_io
     return tempo_executado;
 }
 
-
+// Função que simula as decisões da CPU
 int CPU_executa(fila* alta, fila* baixa, fila* io_disco, fila* io_fita, fila* io_impressora, int* finalizados, int tempo_atual) {
     processo p_executando;
     int tempo_gasto = 0;
@@ -228,7 +302,7 @@ void gerenciar_e_avancar_IOs(int tempo_passado, int tempo_atual_ciclo, fila* alt
 
 
 // Lógica Principal
-int main() {
+int main(int argc, char* argv[]) {
     fila prioridade_alta, prioridade_baixa, io_disco, io_fita, io_impressora;
     inicializar_fila(&prioridade_alta);
     inicializar_fila(&prioridade_baixa);
@@ -240,8 +314,20 @@ int main() {
 
     // Simplesmente criando todos os processos que vão ser simulados
     processo todos_os_processos[max_processos];
-    for (int i = 0; i < max_processos; i++) todos_os_processos[i] = criadora_processos();
-    printa_lista_de_processos(todos_os_processos, max_processos);
+    int num_processos = max_processos;
+    
+    if (argc > 1) {
+        num_processos = carregar_processos_csv(argv[1], todos_os_processos, max_processos);
+        if (num_processos == -1) {
+            printf("Erro ao carregar CSV. Usando processos aleatórios.\n");
+            num_processos = max_processos;
+            for (int i = 0; i < max_processos; i++) todos_os_processos[i] = criadora_processos();
+        }
+    } else {
+        for (int i = 0; i < max_processos; i++) todos_os_processos[i] = criadora_processos();
+    }
+    
+    printa_lista_de_processos(todos_os_processos, num_processos);
 
 
     // Variáveis para o controle do tempo na simulação
@@ -250,9 +336,9 @@ int main() {
     int tempo_anterior = -1;
 
     printf("\n--- INICIO DA SIMULACAO (Quantum = %d) ---\n", quantum);
-    while (processos_finalizados < max_processos) {
+    while (processos_finalizados < num_processos) {
         // Verifica chegadas no INTERVALO de tempo
-        for (int i = 0; i < max_processos; i++) {
+        for (int i = 0; i < num_processos; i++) {
             if (todos_os_processos[i].pcb_info.PID != -1 && todos_os_processos[i].tempo_chegada <= tempo_simulacao) {
                 printf("Tempo %d: Chegou o PID %d.\n", todos_os_processos[i].tempo_chegada, todos_os_processos[i].pcb_info.PID);
                 enfileirar(&prioridade_alta, todos_os_processos[i]);
