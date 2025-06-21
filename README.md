@@ -1,7 +1,3 @@
-Aqui está o texto com **todos os `[cite: ...]` e `[cite_start]` removidos**, conforme solicitado:
-
----
-
 # Simulador de Escalonador de Processos
 
 Este projeto é uma implementação em C de um simulador de escalonador de processos, desenvolvido para a disciplina de Arquitetura de Computadores e Sistemas Operacionais. O objetivo é simular a alocação de CPU e o gerenciamento de filas de processos e de I/O.
