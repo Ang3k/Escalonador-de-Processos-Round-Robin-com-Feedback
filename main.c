@@ -1,9 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include "fila.h" // Inclui o cabeçalho da fila
 
-// Definindo variáveis e constantes importantes
-#define max_processos 10
+// Definindo constantes importantes que não são da fila
 #define quantum 3
 #define TEMPO_DISCO 7
 #define TEMPO_FITA 10
@@ -12,45 +12,13 @@
 int contador_global = 0;
 int tempo_chegada_acumulado = 0;
 
-// Estruturas
-typedef struct {
-    int PID;
-    int PPID;
-    int status;
-} pcb;
-
-typedef struct {
-    pcb pcb_info; // pcb_info;
-    int tempo_servico;
-    int tempo_chegada;
-    int tempo_CPU_usado;
-
-    int num_total_IO;
-    int proximo_IO;
-    int tipo_IO[3]; // Os IO´S são representados por valores inteiros, "1" representa Disco por exemplo
-    int gatilhos_IO[3];
-    int tempo_restante_IO;
-} processo;
-
-typedef struct {
-    int inicio;
-    int fim;
-    int tamanho;
-    processo fila_processos[max_processos];
-} fila;
-
-// Protótipos das funções
+// Protótipos das funções (mantendo as que não são da fila)
 processo criadora_processos();
-void inicializar_fila(fila* f);
-void enfileirar(fila* f, processo p);
-processo desenfileirar(fila* f);
-void printa_fila(fila* f);
 void printa_lista_de_processos(processo lista[], int num_processos);
 int rodar_processo(processo* p, int tempo_atual, int* status_final, int* tipo_io_ocorrido);
 int CPU_executa(fila* alta, fila* baixa, fila* io_disco, fila* io_fita, fila* io_impressora, int* finalizados, int tempo_atual);
 void gerenciar_e_avancar_IOs(int tempo_passado, int tempo_atual_ciclo, fila* alta, fila* baixa, fila* io_disco, fila* io_fita, fila* io_impressora);
 static void processa_uma_fila_io(int tempo_passado, int tempo_atual_ciclo, fila* fila_io, fila* alta, fila* baixa, int tipo_io_id);
-
 
 // Implementações das funções
 processo criadora_processos(){
@@ -76,46 +44,8 @@ processo criadora_processos(){
         novo_processo.tipo_IO[i] = (rand() % 3) + 1;
         temp = novo_processo.gatilhos_IO[i];
     }
-    novo_processo.tempo_servico = temp + (rand() % 10) + 1; // utilizando temp para ter tempo o suficiente para rodar o programa e fazer os IO´s
+    novo_processo.tempo_servico = temp + (rand() % 10) + 1;
     return novo_processo;
-}
-
-
-// Lógicas para as filas
-void inicializar_fila(fila* f){
-    f->inicio = 0;
-    f->fim = 0;
-    f->tamanho = 0;
-}
-
-void enfileirar(fila* f, processo p){
-    if (f->tamanho >= max_processos){ return; }
-    f->fila_processos[f->fim] = p;
-    f->fim = (f->fim + 1) % max_processos;
-    f->tamanho++;
-}
-
-processo desenfileirar(fila* f){
-    if (f->tamanho == 0){
-        processo processo_vazio = {0};
-        processo_vazio.pcb_info.PID = -1;
-        return processo_vazio;
-    }
-    processo p = f->fila_processos[f->inicio];
-    f->inicio = (f->inicio + 1) % max_processos;
-    f->tamanho--;
-    return p;
-}
-
-void printa_fila(fila* f){
-    if (f->tamanho == 0) { printf("[vazia]"); return; }
-    int i = f->inicio;
-    int count = 0;
-    while(count < f->tamanho) {
-        printf("[PID:%d] ", f->fila_processos[i].pcb_info.PID);
-        i = (i + 1) % max_processos;
-        count++;
-    }
 }
 
 // Vetor para printar informações na função à seguir
@@ -131,14 +61,14 @@ void printa_lista_de_processos(processo lista[], int num_processos) {
     printf("\n--------------------------------------------------------------------------\n");
     printf("PID | Chegada | Servico | I/Os | Dispositivos\n");
     printf("----|---------|---------|------|------------------------------------------\n");
-    
+
     for (int i = 0; i < num_processos; i++) {
-        printf("%3d |   %3d   |   %3d   |  %2d  | ",
+        printf("%3d |   %3d   |   %3d   |   %2d  | ",
                lista[i].pcb_info.PID,
                lista[i].tempo_chegada,
                lista[i].tempo_servico,
                lista[i].num_total_IO);
-        
+
         // Imprime todas as operações I/O em uma linha
         if (lista[i].num_total_IO > 0) {
             for (int j = 0; j < lista[i].num_total_IO; j++) {
@@ -162,7 +92,7 @@ int rodar_processo(processo* p, int tempo_atual, int* status_final, int* tipo_io
         p->tempo_servico--;
         p->tempo_CPU_usado++;
         tempo_executado++;
-        
+
         if (p->proximo_IO < p->num_total_IO){
             int gatilho_atual = p->gatilhos_IO[p->proximo_IO];
             if (p->tempo_CPU_usado == gatilho_atual){
@@ -185,7 +115,6 @@ int rodar_processo(processo* p, int tempo_atual, int* status_final, int* tipo_io
     }
     return tempo_executado;
 }
-
 
 int CPU_executa(fila* alta, fila* baixa, fila* io_disco, fila* io_fita, fila* io_impressora, int* finalizados, int tempo_atual) {
     processo p_executando;
@@ -292,7 +221,6 @@ void gerenciar_e_avancar_IOs(int tempo_passado, int tempo_atual_ciclo, fila* alt
     processa_uma_fila_io(tempo_passado, tempo_atual_ciclo, io_fita, alta, baixa, 2);
     processa_uma_fila_io(tempo_passado, tempo_atual_ciclo, io_impressora, alta, baixa, 3);
 }
-
 
 // Lógica Principal
 int main() {
