@@ -36,5 +36,3 @@ O simulador implementa o algoritmo **Round Robin com Feedback**, utilizando múl
    ```
 
 ---
-
-Se quiser que eu edite mais alguma parte (como deixar mais técnico, resumido ou formatar como README), é só dizer.
