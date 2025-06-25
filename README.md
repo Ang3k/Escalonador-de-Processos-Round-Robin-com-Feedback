@@ -29,10 +29,16 @@ O simulador implementa o algoritmo **Round Robin com Feedback**, utilizando múl
    gcc main.c fila.c -o main
    ```
 
-2. Para executar o simulador após a compilação:
+2. Para executar o simulador após a compilação usando a função de gerar processos:
 
    ```bash
    ./main
+   ```
+
+3. Para executar o simulador após a compilação usando o arquivo csv:
+
+   ```bash
+   ./main processos.csv
    ```
 
 ---
