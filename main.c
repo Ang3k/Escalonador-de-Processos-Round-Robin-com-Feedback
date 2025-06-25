@@ -7,10 +7,11 @@
 // Definindo variáveis e constantes importantes
 #define max_processos 10
 #define quantum 5
-#define TEMPO_DISCO 7
-#define TEMPO_FITA 10
-#define TEMPO_IMPRESSORA 15
+#define TEMPO_DISCO 3
+#define TEMPO_FITA 5
+#define TEMPO_IMPRESSORA 7
 
+// Contador para criar os PID´s e outro para ir acumulando o tempo de chegada (apenas se a criação for aleatória)
 int contador_global = 0;
 int tempo_chegada_acumulado = 0;
 
@@ -43,6 +44,7 @@ processo criadora_processos(){
     novo_processo.tempo_restante_IO = 0;
     novo_processo.num_total_IO = (rand() % 4);
     novo_processo.proximo_IO = 0;
+    // Define aleatoriamente as operações de I/O
     for (int i = 0 ; i < novo_processo.num_total_IO ; i++){
         novo_processo.gatilhos_IO[i] = temp + (rand() % 6) + 2;
         novo_processo.tipo_IO[i] = (rand() % 3) + 1;
@@ -68,8 +70,10 @@ int carregar_processos_csv(const char* arquivo, processo lista[], int max_procs)
         return -1;
     }
     
+    // Lê o arquivo linha por linha
     while (fgets(linha, sizeof(linha), file) && num_processos < max_procs) {
         processo p;
+        // Limpa a estrutura do processo antes de preencher
         memset(&p, 0, sizeof(processo));
         
         // Parse básico da linha CSV
@@ -170,6 +174,7 @@ int rodar_processo(processo* p, int tempo_atual, int* status_final, int* tipo_io
         p->tempo_CPU_usado++;
         tempo_executado++;
         
+        // Verifica se uma operação de I/O deve começar
         if (p->proximo_IO < p->num_total_IO){
             int gatilho_atual = p->gatilhos_IO[p->proximo_IO];
             if (p->tempo_CPU_usado == gatilho_atual){
@@ -194,13 +199,14 @@ int rodar_processo(processo* p, int tempo_atual, int* status_final, int* tipo_io
     return tempo_executado;
 }
 
-// Função que simula as decisões da CPU
+// Função que simula as decisões da CPU usando as filas e a função de Rodar_Processo
 int CPU_executa(fila* alta, fila* baixa, fila* io_disco, fila* io_fita, fila* io_impressora, int* finalizados, int tempo_atual) {
     processo p_executando;
     int tempo_gasto = 0;
     int status_saida = 0;
     int tipo_io;
 
+    // Decide qual processo executar com base na prioridade
     if (alta->tamanho > 0) { // Busca primeiro na fila de alta prioridade, removendo o processo de lá e rodando ele
         p_executando = desenfileirar(alta);
         tempo_gasto = rodar_processo(&p_executando, tempo_atual, &status_saida, &tipo_io);
@@ -261,6 +267,7 @@ int CPU_executa(fila* alta, fila* baixa, fila* io_disco, fila* io_fita, fila* io
     return tempo_gasto > 0 ? tempo_gasto : 1;
 }
 
+// Processa uma única fila de I/O
 static void processa_uma_fila_io(int tempo_passado, int tempo_atual_ciclo, fila* fila_io, fila* alta, fila* baixa, int tipo_io_id) {
     if (fila_io->tamanho == 0) return;
 
@@ -270,16 +277,18 @@ static void processa_uma_fila_io(int tempo_passado, int tempo_atual_ciclo, fila*
         processo* p_frente = &fila_io->fila_processos[fila_io->inicio];
         int tempo_para_finalizar = p_frente->tempo_restante_IO;
 
+        // Se o I/O do processo termina neste ciclo
         if (tempo_para_finalizar <= tempo_restante_no_ciclo) {
             tempo_restante_no_ciclo -= tempo_para_finalizar;
             processo p = desenfileirar(fila_io);
             p.pcb_info.status = 0;
 
             const char* nome_fila_destino = "";
-            if (tipo_io_id == 1) {
+            // Processos que usam fita ou impressora voltam para a fila de alta prioridade
+            if (tipo_io_id == 1) { // Disco
                 enfileirar(baixa, p);
                 nome_fila_destino = "BAIXA";
-            } else {
+            } else { // Fita ou Impressora
                 enfileirar(alta, p);
                 nome_fila_destino = "ALTA";
             }
@@ -288,12 +297,15 @@ static void processa_uma_fila_io(int tempo_passado, int tempo_atual_ciclo, fila*
                    tempo_conclusao, p.pcb_info.PID, dispositivos_IO[tipo_io_id], nome_fila_destino);
 
         } else {
+            // Se não, apenas atualiza o tempo restante
             p_frente->tempo_restante_IO -= tempo_restante_no_ciclo;
             tempo_restante_no_ciclo = 0;
         }
     }
 }
 
+
+// Atualiza o estado de todas as filas de I/O
 void gerenciar_e_avancar_IOs(int tempo_passado, int tempo_atual_ciclo, fila* alta, fila* baixa, fila* io_disco, fila* io_fita, fila* io_impressora) {
     processa_uma_fila_io(tempo_passado, tempo_atual_ciclo, io_disco, alta, baixa, 1);
     processa_uma_fila_io(tempo_passado, tempo_atual_ciclo, io_fita, alta, baixa, 2);
@@ -303,6 +315,7 @@ void gerenciar_e_avancar_IOs(int tempo_passado, int tempo_atual_ciclo, fila* alt
 
 // Lógica Principal
 int main(int argc, char* argv[]) {
+    // Inicializa todas as filas
     fila prioridade_alta, prioridade_baixa, io_disco, io_fita, io_impressora;
     inicializar_fila(&prioridade_alta);
     inicializar_fila(&prioridade_baixa);
@@ -316,6 +329,7 @@ int main(int argc, char* argv[]) {
     processo todos_os_processos[max_processos];
     int num_processos = max_processos;
     
+    // Tenta carregar processos de um arquivo CSV se fornecido
     if (argc > 1) {
         num_processos = carregar_processos_csv(argv[1], todos_os_processos, max_processos);
         if (num_processos == -1) {
@@ -324,6 +338,7 @@ int main(int argc, char* argv[]) {
             for (int i = 0; i < max_processos; i++) todos_os_processos[i] = criadora_processos();
         }
     } else {
+        // Se não, cria processos aleatórios
         for (int i = 0; i < max_processos; i++) todos_os_processos[i] = criadora_processos();
     }
     
@@ -336,18 +351,21 @@ int main(int argc, char* argv[]) {
     int tempo_anterior = -1;
 
     printf("\n--- INICIO DA SIMULACAO (Quantum = %d) ---\n", quantum);
+    // Loop principal da simulação, continua até todos os processos terminarem
     while (processos_finalizados < num_processos) {
-        // Verifica chegadas no INTERVALO de tempo
+        // Verifica chegadas de novos processos
         for (int i = 0; i < num_processos; i++) {
             if (todos_os_processos[i].pcb_info.PID != -1 && todos_os_processos[i].tempo_chegada <= tempo_simulacao) {
                 printf("Tempo %d: Chegou o PID %d.\n", todos_os_processos[i].tempo_chegada, todos_os_processos[i].pcb_info.PID);
                 enfileirar(&prioridade_alta, todos_os_processos[i]);
-                todos_os_processos[i].pcb_info.PID = -1;
+                todos_os_processos[i].pcb_info.PID = -1; // Marca como já adicionado
             }
         }
 
+        // Executa um processo da CPU
         int tempo_de_execucao = CPU_executa(&prioridade_alta, &prioridade_baixa, &io_disco, &io_fita, &io_impressora, &processos_finalizados, tempo_simulacao);
 
+        // Gerencia as filas de I/O
         gerenciar_e_avancar_IOs(tempo_de_execucao, tempo_simulacao, &prioridade_alta, &prioridade_baixa, &io_disco, &io_fita, &io_impressora);
 
         printf("Estado no fim do ciclo que comecou em %d: \n", tempo_simulacao);
@@ -358,7 +376,7 @@ int main(int argc, char* argv[]) {
         printf("\tFila Impressora: "); printa_fila(&io_impressora); printf("\n");
         printf("---------------------------------------------\n");
 
-        // Atualiza o tempo anterior antes de pular
+        // Atualiza o tempo da simulação
         tempo_simulacao += tempo_de_execucao;
     }
 
